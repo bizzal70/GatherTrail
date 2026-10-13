@@ -13,3 +13,4 @@ ignore:
   - .luarc.json
   - CLAUDE.md
   - README.md
+  - media
