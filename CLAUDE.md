@@ -1,0 +1,74 @@
+# GatherTrail
+
+Remembers where the account's characters find ore, herbs, fishing pools, skinning spots, chests and rares, ranks the best zone to go to, and guides the player there. One addon, one repository: `bizzal70/GatherTrail`.
+
+This repository was started on 2026-10-13 as a clean copy for publishing. The earlier history is in `bizzal70/WoW-Forever-Addons`, which also held a file of the user's own early records (`Legacy.lua`); that file and the code that read it are deliberately not here.
+
+## Workflow
+
+- **No local `.git`.** GitHub holds all history. Publish with `tools\Publish.ps1 -Message "..."`, which uses a throwaway temp clone and runs the tests first.
+- **Layout:** the addon's own files (`GatherTrail.toc`, the Lua files, `Kinds\`) sit at the top of the project, because that is what the release packager expects. `tests/`, `tools/` and `.github/` are development-only and are left out of the released zip by `.pkgmeta`.
+- **Testing in game:** `tools\Link-Addon.ps1` junctions this folder into the client's `Interface\AddOns` as `GatherTrail`. Edits are live after `/reload`; a new file or a TOC change needs a full client restart.
+- **Client install:** `C:\Program Files (x86)\World of Warcraft\_classic_beta_\` (`WowB.exe`). Expect a different flavor folder after launch (reported for 2026-11-04); pass `-Flavor` to the link script then.
+- **Tests:** `python tests/run.py` runs the addon in real Lua 5.1 (the `lupa` pip package) against a fake WoW API in `tests/wow_stub.lua`, loading the files the TOC lists, so a file left out of the TOC fails the tests. They run before every publish and again on GitHub. They prove the addon's own logic only; whether the real client behaves like the stub can only be checked in game.
+- **Releases:** a tag starting with `v` runs `.github/workflows/release.yml`, which uses the BigWigs packager; a tag containing `beta` is released as a beta. CurseForge and Wago uploads are skipped until their project IDs are in the TOC and their tokens are in the repository secrets.
+- **Evidence from the game:** the user's saved data is at `C:\Program Files (x86)\World of Warcraft\_classic_beta_\WTF\Account\<account>\SavedVariables\GatherTrail.lua`. Read it before claiming what has or has not worked in game. The game writes it only on logout or `/reload`, and rescans addons at character select, so neither a missing file nor the game's start time proves an addon is not loaded.
+
+## Proven in game, and not
+
+From the user's saved data on 2026-10-13: mining (with skill recorded), herbs, skinning (filed under loot names, with creatures noted), chests, failed attempts from skill errors, sightings in the world and on the minimap, a walked zone crossing (Elwynn Forest to Stormwind), and creature levels per zone. The window, options page and minimap pins were seen in screenshots.
+
+Not yet seen working in game: fishing pools, rare creatures (and whether Forever shows vignettes for them), flight masters, transports, and the in-world marker. In Elwynn Forest the game gave no PvP status for the Alliance character (`zones[1429]` has creature levels but no faction entry), so the hostile-zone penalty has not been exercised either.
+
+## How it works
+
+- Data is account-wide: `GatherTrailDB` is a `SavedVariables` (not per-character) table. `nodes[mapID]` is a list of `{x, y, count, fails, seen, approx, first, last, names}`; `zones[mapID][faction]` is the zone's PvP status as that faction saw it.
+- Three kinds of evidence feed it: `mined` (cast succeeded), `failed` (cast failed or interrupted, or a skill error when clicking a node), `seen` (node tooltip hovered, works on characters without Mining). `seen` and skill-error records use the player's position and are flagged `approx` until an exact record lands nearby.
+- It tracks ore, herbs, fishing pools, skinning, treasure chests and rare creatures. A node's `kind` field is `"herb"`, `"fish"`, `"skin"`, `"chest"` or `"rare"`, and absent for ore (`ns.NodeProfession`); different kinds never merge by proximity. The window has one tab per profession and ranks each separately.
+- Skinning has no fixed nodes. Each successful Skinning cast is filed under the names of the loot seen within 4 seconds (`LOOT_READY` / `LOOT_OPENED`), or under the creature's name if no loot is seen. Skins within 40 yards add to one spot with no repeat-visit window, and the spot's `mobs` table counts the creatures. Skin names are never added to `ns.knownNames`, so item tooltips are not mistaken for nodes.
+- Treasure chests are opened with the generic "Opening" cast, which levers, doors and quest objects also use, so a cast only counts when the target's name contains one of the `nameWords` in `Kinds\Chests.lua` (English only). The same words recognise chests on hover and on the minimap.
+- Rare creatures (`Kinds\Rares.lua`, kind `"rare"`) are not cast-based. They come from the game's vignettes (`C_VignetteInfo`, exact position, automatic; atlas names containing "kill" are rares and "loot" are recorded as chests), from any unit the player targets, mouses over or gets a nameplate for whose `UnitClassification` is `rare` or `rareelite` (recorded at the player's position, approximate), and from looting a dead rare (a kill, exact). Whether Forever shows vignettes for its rares is unverified. Rare names are not added to `ns.knownNames`.
+- Saved data (records and settings) carries `version`, its layout number. `ns.DATA_VERSION` in `Core.lua` is the layout the code works with. When a change needs existing data converted, raise it by one and add the conversion to `MIGRATIONS` under the new number; `ns.MigrateData` runs the missing steps at load. Data from a newer layout is left untouched and the player is warned. `/gt version` and the options page show both the addon version and the layout.
+- Pin filter: `showKinds[kind]` hides a kind on both maps (`ns.IsKindShown`); stops on the active route are always drawn.
+- Skill awareness (`Skills.lua`): `skills[name]` holds `need` (parsed from a skill error that states a number), `gotAt` (lowest skill a gather succeeded at) and `lackedAt` (highest skill refused at). `ns.CanGather` returns yes / no / unknown; only ore and herbs are gated, and a character without the profession is never ruled out. Nodes rated "no" get zero weight in the ranking. Skill is read with `GetProfessions` / `GetProfessionInfo`, which works on Forever (a Copper Vein's `gotAt` was recorded in game).
+- Freshness: `ns.IsFresh(node)` is true for `skipRecentMinutes` (default 10, 0 = off) after `lastMined`; routes step over fresh stops and their pins fade. Skinning spots and rares are exempt.
+- Skinning weight in the ranking is `sqrt(count)` per spot; every other kind uses `1 - 0.5^count`.
+- Options live in `Settings.lua`, a page shown over the window lists by the header Options button. Every option also has a slash command.
+- Export / import (`Data.lua`): plain text, header `GatherTrail1`, one comma-separated record per line (N node, F flight master, L connection, S skill note). Import merges by taking the larger of each count, so it is idempotent.
+- Zone level ranges (`Zones.lua`, `ns.GetZoneLevels`): `C_Map.GetMapLevels` came back empty on Forever (no level tags showed in game, 2026-10-12), so the range falls back to the 10th-90th percentile of hostile creature levels seen in the zone (`zones[mapID].mobLevels`, at least 15 creatures), then to a table of the original game's zone levels. Forever uses the Classic uiMapIDs (1429 is Elwynn Forest, confirmed in saved data). `/gt zone` prints all three sources for the current zone.
+- Minimap blips cannot be read by addons: the client exposes no positions for its tracking blips. `MinimapPins.lua` instead records a blip when the cursor is on it, taking the name from the tooltip and the position from where the cursor sits on the minimap. It polls (`Minimap:IsMouseOver()` with a tooltip showing) and does not rely on the tooltip's owner or on tooltip hooks: the first version required owner `Minimap` and recorded nothing in game (2026-10-11). Names are judged by `ns.ClassifyNodeName` (saved names, then each kind's `nameWords`, matched on whole words), so a herb blip is only recognised once that herb has been seen in the world.
+- Fishing pools work differently because a Fishing cast has no target and a pool's tooltip does not name the profession. A pool is recognised by English words in its name (`nameWords` in `Kinds\Fishing.lua`) or by a name already saved. A Fishing cast counts for a pool only if the player pointed at it within 30 seconds and is still within 15 yards of where they stood; the pool is then placed 15 yards in front of them. Open-water fishing records nothing.
+- Formerly named OreTrail (renamed 2026-10-11). Slash commands: `/gt`, `/gather`, `/gathertrail`.
+- Each kind of thing tracked is described once, in its own file under `Kinds\`, with `ns.RegisterKind` (`Registry.lua` documents the fields): its tab label and wording, pin colours, skill, saved-data rules, and how it is collected. The window, options page, both maps, ranking, skills and export all read from `ns.KINDS` / `ns.KindList()`; none keeps its own per-kind list. Adding a kind is one new file in `Kinds\` plus its line in the TOC.
+- Collection is an engine plus the kinds' collection fields. `Collector.lua` handles what kinds share (a cast on a node, the node's tooltip under the cursor, a skill error); a kind adds `ResolveTarget` / `Finish` / `Sighted` only where it does not fit (fishing, skinning, chests). `Kinds\Rares.lua` does its own detection. Where two kinds could claim the same name, the one listed first in the TOC wins, which is why the TOC lists them in a different order from the tabs (`order` sets the tabs).
+- File layout: `Registry.lua` (kinds), `Core.lua` (saved data, recording, slash commands), `UI.lua` (drawing helpers for the window and options page), `Pins.lua` (pin colour, shape and node tooltip shared by both maps), `MapPins.lua` (world map only), `MinimapPins.lua` (minimap only).
+- Gathering is detected by spell *name* ("Mining"; "Herb Gathering" or "Herbalism"), and nodes under the cursor by a tooltip second line that mentions the profession. The names live in each kind's file under `Kinds\`. `/gt debug` prints the casts, tooltips and error messages needed to fix a kind that is not recording.
+- Guidance has two layers. The beacon moves the game's own map pin to the next node and asks the client to track it (`C_SuperTrack.SetSuperTrackedUserWaypoint`), which draws the in-world marker; whether Forever allows that call from addons is unverified, so `Navigator.lua` listens for `ADDON_ACTION_FORBIDDEN` and falls back to pin-only. The arrow panel is drawn from `Line` objects (no texture files) and always works. The player's own pin is saved and restored.
+- World map (`MapPins.lua`): pins are counter-scaled frames on the map canvas (offsets in on-screen units), lines are drawn on the canvas itself (sizes divided by the zoom scale). An active route shows numbered stops, a chevron per leg for direction, and a white line from the player to the next stop.
+- Minimap pins (`MinimapPins.lua`) are redrawn 10 times a second from `C_Minimap.GetViewRadius()` and the `rotateMinimap` CVar, and assume a round minimap. The route's next stop is held on the rim when out of range.
+- Routes within a zone are straight-line loops (nearest neighbour + 2-opt); terrain is not known.
+- Travel between zones (`Travel.lua`) is learned, not shipped. `flights[nodeID]` holds flight master positions (exact when a character opened the flight map there, otherwise placed from the flight map); `chars[guid].known` is which flight points each character can use; `links` holds walked zone crossings (two-way) and transports (one-way, inferred from a position jump while not casting, flying, or dead). A 1-second ticker does the tracking. Planning is Dijkstra over those points: on foot only within one map, so a zone with no recorded connection has no plan and falls back to a straight line. The navigator re-plans on every zone change and flight landing.
+- All world positions go through `ns.ToWorld` (`C_Map.GetWorldPosFromMapPos`) so they share one frame; `UnitPosition` is deliberately not used.
+
+## Client facts
+
+Everything below, unless marked verified, comes from community sources during the beta (Warcraft Wiki, GitHub ports, fan guides), not from Blizzard docs. Builds change. Verify in game before relying on any of it.
+
+- Local client was 1.60.1.70338 on 2026-10-11 (read from `WowB.exe`).
+- TOC: `## Interface: 16001` (verified in game on build 70338).
+- TOC flavor suffix is `_Forever.toc` or `_Camelot.toc`. The TOC `[Game]` variable expands to `Camelot`. Game type for `AllowLoadGameType` is `forever` / `camelot`.
+- The client is Retail-based: Midnight 12.x API and UI architecture, not the Classic API. Port from Retail code.
+- `WOW_PROJECT_ID` is `18` on build 70338 (verified in game 2026-10-11, along with interface 16001, by a starter addon since removed). Community guides written against earlier builds say it is 1 (`WOW_PROJECT_MAINLINE`); that is out of date, so Retail code gated on `WOW_PROJECT_ID == WOW_PROJECT_MAINLINE` will not run here. The name of the constant for 18 is not yet known. Prefer testing for the specific API you need over branching on either number.
+- Lua 5.1: no `goto`, no `//`, no bitwise operators (use `bit.band` etc.), no `require`. The TOC is the module loader. Start files with `local addonName, ns = ...`.
+- Removed globals: `GetItemInfo`, `GetSpellInfo`, `UnitAura`/`UnitBuff`/`UnitDebuff`, `GetTalentInfo`, `GetNumTalentTabs`, `CombatLogGetCurrentEventInfo`, `InterfaceOptionsFrame_OpenToCategory`. Use `C_Item`, `C_Spell`, `C_UnitAuras`, `C_Traits`, and the `Settings` API.
+- `C_Spell.GetSpellInfo` returns a table. Item and spell data can be nil until cached.
+- Registering an event that does not exist throws and aborts the file. Wrap speculative `RegisterEvent` calls in `pcall`.
+- Secret values (Midnight combat restrictions) are active. In combat, `UnitHealth`, aura data, and some names and booleans can be secret: arithmetic, comparison, and printing fail. Guard with `issecretvalue`, and pass values straight to widgets (`StatusBar:SetValue`, `Cooldown:SetCooldownFromDurationObject`) instead of doing Lua math. Combat-log parsing is not available.
+- Check `InCombatLockdown()` before touching protected frames and defer to `PLAYER_REGEN_ENABLED`.
+- SavedVariables: initialise in `ADDON_LOADED`. Early beta builds reportedly wrote them but did not read them back; on build 70338 they are read back (confirmed in game 2026-10-11).
+
+## References
+
+- https://warcraft.wiki.gg/wiki/TOC_format
+- https://warcraft.wiki.gg/wiki/Patch_12.0.0/API_changes
+- https://github.com/Thunderz96/forever-addon-kit (MIT; captured API baseline in `data/forever_api.json`)

@@ -1,0 +1,36 @@
+name: Release
+
+# Pushing a tag that starts with "v" (for example v0.2.0) tests the addon,
+# packages it as a zip, attaches the zip to a GitHub release, and uploads it
+# to CurseForge and Wago.
+#
+# The uploads need two things that are not here yet:
+#   * the project IDs in GatherTrail.toc (X-Curse-Project-ID, X-Wago-ID)
+#   * the upload tokens as repository secrets (CF_API_KEY, WAGO_API_TOKEN)
+# Until both are in place for a site, that site is simply skipped.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Run the addon tests
+        run: |
+          pip install lupa
+          python tests/run.py
+      - name: Package and upload
+        uses: BigWigsMods/packager@v2
+        env:
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          WAGO_API_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}

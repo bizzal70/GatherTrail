@@ -1,0 +1,22 @@
+name: Tests
+
+# Runs the addon's tests on GitHub for every push, as a second check behind
+# the one tools/Publish.ps1 runs before publishing.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install the Lua runtime the tests use
+        run: pip install lupa
+      - name: Run the addon tests
+        run: python tests/run.py

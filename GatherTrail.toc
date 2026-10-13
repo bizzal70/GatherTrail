@@ -1,0 +1,32 @@
+## Interface: 16001
+## Title: GatherTrail
+## Notes: Records the ore, herbs, fishing pools, skinning spots, treasure chests and rare creatures your characters find, ranks the best places to gather each, and routes you there. Type /gt.
+## Author: bizzal70
+## Version: 0.17.0
+## SavedVariables: GatherTrailDB
+## IconTexture: Interface\Icons\Trade_Mining
+## AddonCompartmentFunc: GatherTrail_OnAddonCompartmentClick
+
+Registry.lua
+Core.lua
+Route.lua
+Travel.lua
+Skills.lua
+Zones.lua
+Data.lua
+Analysis.lua
+Navigator.lua
+Pins.lua
+MapPins.lua
+MinimapPins.lua
+UI.lua
+Window.lua
+Settings.lua
+MinimapButton.lua
+Collector.lua
+Kinds\Fishing.lua
+Kinds\Chests.lua
+Kinds\Ore.lua
+Kinds\Herbs.lua
+Kinds\Skinning.lua
+Kinds\Rares.lua
