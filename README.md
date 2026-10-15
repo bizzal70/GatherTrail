@@ -81,6 +81,15 @@ If one of these does not work for you, `/gt debug` prints what the game reports,
 
 Everything is saved on your own computer, in the game's saved-settings folder, as `GatherTrail.lua`. Nothing is sent anywhere.
 
+## More from this author
+
+Other small addons for World of Warcraft: Forever, all free:
+
+- **[MouseTip](https://www.curseforge.com/wow/addons/mousetip)** shows tooltips at your mouse cursor.
+- **[RangeShade](https://www.curseforge.com/wow/addons/rangeshade)** shades action buttons red when your target is out of range.
+- **[VendorMate](https://github.com/bizzal70/VendorMate)** sells junk and repairs at vendors, and warns when your gear is wearing out.
+- **[AltBoard](https://github.com/bizzal70/AltBoard)** shows all your characters at a glance: level, gold, rested and where you left them.
+
 ## Installing
 
 Copy this folder into `World of Warcraft\_classic_beta_\Interface\AddOns\` as `GatherTrail`, restart the game, and enable GatherTrail on the character select screen.
